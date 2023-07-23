@@ -1,5 +1,5 @@
 "use client"
-import React, {useState} from 'react'
+import React, {useState, useReducer, useMemo} from 'react'
 import Image from 'next/image'
 import styles from './page.module.css'
 import {
@@ -8,7 +8,6 @@ import {
   Divider,
   Tooltip,
   Card,
-  CardContent,
   Switch,
   TextareaAutosize,
 } from '@mui/material'
@@ -30,9 +29,8 @@ import PhotoRoundedIcon from '@mui/icons-material/PhotoRounded';
 import ErrorIcon from '@mui/icons-material/Error';
 import useMediaQuery from '@mui/material/useMediaQuery';
 import Collapse from '@mui/material/Collapse';
-import {debounce, checkPendingChanges, checkForError} from './helpers';
+import {debounce, checkPendingChanges, checkForError, deepCopy} from './helpers';
 import { MessageTemplate } from './interfaces'
-//test
 
 // Color definitions because I couldn't get customizing material UI working
 const PRIMARY = 'rgba(48,127,246)'
@@ -64,15 +62,6 @@ const MESSAGE_LAYOUT = {
 
 }
 
-type Template = {
-  name: string,
-  language: string,
-  components: any[]
-  namespace: string
-}
-
-
-
 const Icon = ({
   name = '',
   ...props
@@ -97,12 +86,35 @@ const Icon = ({
   }
 }
 
-const buildSidebarTitle = (tabName: string): string => {
-  switch (tabName) {
-  case 'broadcast':
-  default:
-    return 'Create a Campaign'
+// 'home' is active when no tab is selected
+type Tabs = 'home' | 'broadcast' | 'messages' | 'dashboard';
+type TabsInfoType = {
+  home: {
+    sidebarTitle: string,
+  },
+  broadcast: {
+    sidebarTitle: string,
+  },
+  messages: {
+    sidebarTitle: string,
+  },
+  dashboard: {
+    sidebarTitle: string,
   }
+}
+const tabsInfo: TabsInfoType = {
+  home: {
+    sidebarTitle: '',
+  },
+  broadcast: {
+    sidebarTitle: 'Create a Campaign',
+  },
+  messages: {
+    sidebarTitle: 'Messages Title',
+  },
+  dashboard: {
+    sidebarTitle: 'Dashboard Title',
+  },
 }
 
 type TabProps = {
@@ -111,12 +123,12 @@ type TabProps = {
   selected: boolean,
   select: (value: any) => void,
 }
-const Tab: React.FC<TabProps> = ({
+const Tab = ({
   tabName = '',
   displayName = '',
   selected = false,
   select,
-}) => {
+}: TabProps) => {
   return (
     <Box
       sx={{
@@ -214,12 +226,12 @@ const CloseButton = ({
 }
 
 type ToolbarProps = {
-  activeTab: string,
-  setTab: (value: any) => void,
+  activeTab: Tabs,
+  openTab: (name: Tabs) => void,
 }
 const Toolbar: React.FC<ToolbarProps> = ({
-  activeTab = '',
-  setTab = () => {},
+  activeTab,
+  openTab,
 }) => {
   return (
     <Box
@@ -247,7 +259,7 @@ const Toolbar: React.FC<ToolbarProps> = ({
         >
           <Tab
             tabName="connectly"
-            selected={activeTab === "connectly"}
+            selected={false}
             select={() => {
               console.log('GO HOME')
             }}
@@ -259,7 +271,7 @@ const Toolbar: React.FC<ToolbarProps> = ({
           />
           <Tab
             tabName="agent"
-            selected={activeTab === "agent"}
+            selected={false}
             select={() => {
               console.log('GO TO ACCOUNT')
             }}
@@ -272,22 +284,22 @@ const Toolbar: React.FC<ToolbarProps> = ({
           <Tab
             tabName="dashboard"
             selected={activeTab === "dashboard"}
-            select={() => setTab("dashboard")}
+            select={() => openTab("dashboard")}
           />
           <Tab
             tabName="messages"
             selected={activeTab === "messages"}
-            select={() => setTab("messages")}
+            select={() => openTab("messages")}
           />
           <Tab
             tabName="broadcast"
             selected={activeTab === "broadcast"}
-            select={() => setTab("broadcast")}
+            select={() => openTab("broadcast")}
           />
         </Box>
         <Tab
           tabName="settings"
-          selected={activeTab === "settings"}
+          selected={false}
           select={() => {
             console.log('GO TO SETTINGS')
           }}
@@ -387,7 +399,8 @@ const Header: React.FC<HeaderProps> = ({
   )
 }
 
-const defaultMessage = {
+const defaultMessage: MessageTemplate = {
+  name: 'Sample Message',
   header: {
     included: true,
     includedTemp: true,
@@ -416,15 +429,15 @@ const defaultMessage = {
 }
 
 type MessageBuilderProps = {
-  message: MessageTemplate,
-  setMessage: (value: MessageTemplate) => void,
+  message: string,
+  updateBody: (message: string) => void,
 }
 const MessageBuilder = ({
   message,
-  setMessage,
+  updateBody,
 }: MessageBuilderProps) => {
 
-  const [count, setCount] = useState(message.body.messageTemp.length);
+  const [count, setCount] = useState(message.length);
   const [error, setError] = useState('');
 
   const updateMessageTemp = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -432,14 +445,16 @@ const MessageBuilder = ({
     newValue = newValue.slice(0, CHAR_LIMIT);
     e.target.value = newValue;
     setCount(newValue.length);
-    const newMessage = JSON.parse(JSON.stringify(message))
-    newMessage.body.messageTemp = newValue;
-    // TODO: implement variable validation
+    updateBody(newValue);
+    // // TODO: implement variable validation
     const newError = checkForError(newValue);
     if (newError !== error) {
       setError(newError);
     }
-    setMessage(newMessage);
+
+    // const newMessage = deepCopy(message);
+    // newMessage.body.messageTemp = newValue;
+    // setMessage(newMessage);
   };
   const handleChange = debounce((e: React.ChangeEvent<HTMLTextAreaElement>) => updateMessageTemp(e));
 
@@ -451,7 +466,7 @@ const MessageBuilder = ({
         }}
       >
       <TextareaAutosize
-        defaultValue={message.body.messageTemp}
+        defaultValue={message}
         onChange={handleChange}
         style={{
           marginTop: '16px',
@@ -462,6 +477,8 @@ const MessageBuilder = ({
           paddingBottom: '25px',
           borderRadius: '10px',
           border: `1px solid ${grey[200]}`,
+          backgroundColor: 'white',
+          color: 'black',
         }}
       />
       <p
@@ -486,21 +503,23 @@ const MessageBuilder = ({
   )
 }
 
+type MessageSection = 'header' | 'body' | 'footer' | 'buttons';
 type MessageCardProps = {
   message: MessageTemplate,
-  setMessage: (value: MessageTemplate) => void
-  section: keyof MessageTemplate,
+  updateBody: (message: string) => void
+  includeSection: (include: boolean) => void
+  section: MessageSection,
 }
 
 const MessageCard = ({
   message,
-  setMessage,
+  updateBody,
+  includeSection,
   section,
 }: MessageCardProps) => {
   let title: string;
   let icon: JSX.Element;
   const required = MESSAGE_LAYOUT[section].required;
-  let included = false;
   let body: JSX.Element = <></>;
   switch (section) {
     case String('body'):
@@ -508,7 +527,10 @@ const MessageCard = ({
       icon = <TextFieldsIcon
         sx={{color: grey[600]}}
       />
-      body = <MessageBuilder message={message} setMessage={setMessage}/>
+      body = <MessageBuilder 
+        message={message.body.messageTemp}
+        updateBody={updateBody}
+      />
       break;
     case String('footer'):
       title = 'Footer text'
@@ -594,9 +616,7 @@ const MessageCard = ({
           <Switch
             checked={message[section].includedTemp}
             onChange={() => {
-              const newMessage: MessageTemplate = JSON.parse(JSON.stringify(message))
-              newMessage[section].includedTemp = !newMessage[section].includedTemp
-              setMessage(newMessage)
+              includeSection(!message[section].includedTemp)
             }}
           />
         }
@@ -625,65 +645,26 @@ type SidebarProps = {
   message: MessageTemplate,
   visible: boolean,
   mobile: boolean,
-  setMessage: (value: MessageTemplate) => void,
-  close: () => void,
+  saveMessage: () => void,
+  revertMessage: () => void,
+  removeMessage: () => void,
+  updateBody: (message: string) => void,
+  includeSection: (section: MessageSection, included: boolean) => void,
+  // setMessage: (value: MessageTemplate) => void
+  toggleSidebar: (open: boolean) => void
 }
-const Sidebar: React.FC<SidebarProps> = ({
-  message = defaultMessage,
-  mobile = false,
-  visible = false,
-  setMessage = (value: MessageTemplate) => {},
-  close = () => {},
-}) => {
+const Sidebar = ({
+  message,
+  visible,
+  mobile,
+  saveMessage,
+  revertMessage,
+  removeMessage,
+  updateBody,
+  includeSection,
+  toggleSidebar,
+}: SidebarProps) => {
   const hasChangesPending = checkPendingChanges(message);
-
-  const saveMessage = () => {
-    const newMessage = JSON.parse(JSON.stringify(message));
-    const componentsList: any[] = [];
-    const messageTemp = newMessage.body.messageTemp;
-    Object.entries(newMessage).forEach(entry => {
-      const componentType = entry[0];
-      const included = newMessage[componentType].includedTemp;
-      newMessage[entry[0]].included = included;
-      if (included) {
-        const componentObject: {[key: string]: any} = {
-          type: entry[0],
-        }
-        if (componentType === 'header') {
-          componentObject.url = message[componentType].url;
-        } else if (componentType === 'body') {
-          componentObject.parameters = [];
-          componentObject.message = messageTemp;
-        } else if (componentType === 'footer') {
-          componentObject.message = message[componentType].message;
-        } else if (componentType === 'buttons') {
-          componentObject.buttons = message.buttons.buttons;
-        }
-        componentsList.push(componentObject)
-      }
-    })
-    newMessage.body.message = messageTemp;
-    setMessage(newMessage);
-
-    const template: Template = {
-      name: 'Message Example',
-      language: 'en',
-      components: componentsList,
-      namespace: '',
-    }
-    console.log('MESSAGE TEMPLATE', template)
-  }
-  const cancelChanges = () => {
-    const newMessage = JSON.parse(JSON.stringify(message));
-    Object.entries(newMessage).forEach(entry => {
-      newMessage[entry[0]].includedTemp = newMessage[entry[0]].included;
-    })
-    newMessage.body.messageTemp = newMessage.body.message;
-    setMessage(newMessage);
-  }
-  const deleteMessage = () => {
-    console.log('DELETE MESSAGE');
-  }
 
   return (
     <Box
@@ -737,7 +718,7 @@ const Sidebar: React.FC<SidebarProps> = ({
               Edit Message
             </p>
             <CloseButton
-              onClick={close}
+              onClick={() => toggleSidebar(false)}
             />
           </Box>
           <p
@@ -760,22 +741,26 @@ const Sidebar: React.FC<SidebarProps> = ({
         >
           <MessageCard
             message={message}
-            setMessage={setMessage}
+            updateBody={updateBody}
+            includeSection={(include: boolean) => includeSection('header', include)}
             section="header"
           />
           <MessageCard
             message={message}
-            setMessage={setMessage}
+            updateBody={updateBody}
+            includeSection={(include: boolean) => includeSection('body', include)}
             section="body"
           />
           <MessageCard
             message={message}
-            setMessage={setMessage}
+            updateBody={updateBody}
+            includeSection={(include: boolean) => includeSection('footer', include)}
             section="footer"
           />
           <MessageCard
             message={message}
-            setMessage={setMessage}
+            updateBody={updateBody}
+            includeSection={(include: boolean) => includeSection('buttons', include)}
             section="buttons"
           />
         </Box>
@@ -814,7 +799,7 @@ const Sidebar: React.FC<SidebarProps> = ({
             color: PRIMARY
           }}
           disabled={!hasChangesPending}
-          onClick={hasChangesPending ? cancelChanges : deleteMessage}
+          onClick={hasChangesPending ? revertMessage : removeMessage}
         >
           {hasChangesPending
             ? 'Revert Changes'
@@ -863,11 +848,16 @@ const Badge = ({
 }
 
 // Sample message output
+type MessageProps = {
+  message: MessageTemplate,
+  showSidebar: () => void,
+}
 const Message = ({
-  message = defaultMessage,
-  showSidebar = () => {}
-}) => {
+  message,
+  showSidebar,
+}: MessageProps) => {
   const hasChangesPending = checkPendingChanges(message);
+  console.log('MESSAGE', message)
   return (
     <Box
       sx={{
@@ -1049,10 +1039,15 @@ const Message = ({
 }
 
 // Drag and drop area. Contains sample message
+type CanvasProps = {
+  message: MessageTemplate,
+  showSidebar: () => void,
+}
 const Canvas = ({
-  message = defaultMessage,
-  showSidebar = () => {},
-}) => {
+  message,
+  showSidebar,
+}: CanvasProps) => {
+  console.log('render canvas')
   return (
     <Box
       sx={{
@@ -1064,40 +1059,283 @@ const Canvas = ({
         backgroundColor: 'rgb(250,252,255)',
       }}
     >
-      <Message message={message} showSidebar={showSidebar}/>
+      <Message message={message} showSidebar={showSidebar}
+      />
     </Box>
   )
 }
 
+// DEFINE STATE
+const defaultMessageList: MessageTemplate[] = [defaultMessage];
+type AppState = {
+  activeTab: Tabs, 
+  messages: MessageTemplate[],
+  sidebarOpen: boolean,
+  activeMessage: number,
+}
+const initialState: AppState = {
+  activeTab: 'broadcast',
+  activeMessage: 0,
+  sidebarOpen: true,
+  messages: defaultMessageList,
+}
+
+// ACTIONS
+type OpenMessageAction = {
+  type: 'OPEN_MESSAGE',
+  payload: {
+    index: number,
+  }
+}
+type OpenTabAction = {
+  type: 'OPEN_TAB',
+  payload: { 
+    name: Tabs,
+  }
+}
+type AddMessageAction = {
+  type: 'ADD_MESSAGE',
+}
+type RemoveMessageAction = {
+  type: 'REMOVE_MESSAGE',
+}
+type UpdateBodyAction = {
+  type: 'UPDATE_BDDY',
+  payload: {
+    message: string,
+    // parameters: string[],
+  },
+}
+type IncludeSectionAction = {
+  type: 'INCLUDE_SECTION',
+  payload: {
+    include: boolean,
+    section: MessageSection,
+  }
+}
+type SaveMessageAction = {
+  type: 'SAVE_MESSAGE',
+}
+type RevertMessageAction = {
+  type: 'REVERT_MESSAGE',
+}
+type ToggleSidebarAction = {
+  type: 'TOGGLE_SIDEBAR',
+  payload: {
+    open: boolean,
+  }
+}
+// TODO actions to implement
+// const updateHeaderAction = 'UPDATE_HEADER'
+// const addBodyVariable = 'ADD_BODY_VARIABLE'
+// const updateFooterAction = 'UPDATE_FOOTER'
+// const addButtonAction = 'ADD_BUTTON'
+// const removeButtonAction = 'REMOVE_BUTTON'
+// const updateButtonAction = 'UPDATE_BUTTON'
+// const hideSectionHelp = 'INCLUDE_SECTION'
+// const updateNameAction = 'UPDATE_NAME'
+
+type Action = 
+  OpenMessageAction |
+  OpenTabAction |
+  AddMessageAction |
+  RemoveMessageAction |
+  UpdateBodyAction |
+  IncludeSectionAction |
+  ToggleSidebarAction |
+  SaveMessageAction |
+  RevertMessageAction;
+
+type ActionType = {
+  type: string,
+  payload?: any,
+}
+
+function appReducer(state = initialState, action: ActionType) {
+  let newMessage;
+  let newMessages;
+  switch (action.type) {
+    case 'OPEN_TAB':
+      return {
+        ...state,
+        activeTab: action.payload.name,
+      }
+    case 'OPEN_MESSAGE':
+      return {
+        ...state,
+        activeMessage: action.payload.index,
+      }
+    case 'TOGGLE_SIDEBAR':
+      return {
+        ...state,
+        sidebarOpen: action.payload.open,
+      }
+    case 'ADD_MESSAGE':
+      newMessage = deepCopy(defaultMessage);
+      newMessage.name = `Sample Message ${state.messages.length + 1}`
+      return {
+        ...state,
+        messages: [...state.messages, newMessage],
+      }
+      return state;
+    case 'REMOVE_MESSAGE':
+      newMessages = state.messages.filter((m, i) => i !== state.activeMessage);
+      return {
+        ...state,
+        messages: newMessages,
+      }
+    case 'UPDATE_BODY':
+      newMessages = state.messages.map((m, i) => {
+        if (i === state.activeMessage) {
+          newMessage = deepCopy(m);
+          newMessage.body.messageTemp = action.payload.message;
+          return newMessage
+        }
+        return m
+      });
+      return {
+        ...state,
+        messages: newMessages,
+      }
+    case 'INCLUDE_SECTION':
+      console.log('INCLUDE SECTION!', action.payload)
+      newMessages = state.messages.map((m, i) => {
+        if (i === state.activeMessage) {
+          newMessage = deepCopy(m);
+          newMessage[action.payload.section].includedTemp = action.payload.included;
+          return newMessage
+        }
+        return m
+      });
+      return {
+        ...state,
+        messages: newMessages,
+      };
+    case 'SAVE_MESSGE':
+      newMessages = state.messages.map((m, i) => {
+        if (i === state.activeMessage) {
+          newMessage = deepCopy(m);
+          newMessage.header.included = newMessage.header.includedTemp;
+          newMessage.body.included = newMessage.body.includedTemp;
+          newMessage.body.message = newMessage.body.messageTemp;
+          newMessage.footer.included = newMessage.footer.includedTemp;
+          newMessage.buttons.included = newMessage.buttons.includedTemp;
+          return newMessage
+        }
+        return m
+      });
+      return {
+        ...state,
+        messages: newMessages,
+      };
+    case 'REVERT_MESSAGE':
+      newMessages = state.messages.map((m, i) => {
+        if (i === state.activeMessage) {
+          newMessage = deepCopy(m);
+          newMessage.header.includedTemp = newMessage.header.included;
+          newMessage.body.includedTemp = newMessage.body.included;
+          newMessage.body.messageTemp = newMessage.body.message;
+          newMessage.footer.includedTemp = newMessage.footer.included;
+          newMessage.buttons.includedTemp = newMessage.buttons.included;
+          return newMessage
+        }
+        return m
+      });
+      return {
+        ...state,
+        messages: newMessages,
+      }
+    default:
+      return state;
+  }
+}
+
+// SELECTORS
+const selectSidebarTitle = (activeTab: Tabs): string => {
+  return tabsInfo[activeTab].sidebarTitle;
+}
 export default function Home() {
-  const [tab, setTab] = useState("broadcast")
-  const [template, setTemplate] = useState(defaultMessage)
-  const [sidebarOpen, setSidebarOpen] = useState(true)
+  const [state, dispatch] = useReducer(appReducer, initialState);
+  // if (typeof window !== undefined) {
+  //   window.state = state;
+  // }
   const mobile = useMediaQuery('(max-width:599px)');
+  const activeTab: Tabs = state.activeTab;
+  const sidebarTitle = useMemo(() => selectSidebarTitle(activeTab), [activeTab]);
+  const activeMessage = state.messages[state.activeMessage];
+  console.log('HOME', state)
 
   return (
     <main className={styles.main}>
       <Toolbar
-        activeTab={tab}
-        setTab={setTab}
+        activeTab={state.activeTab}
+        openTab={(name) => {
+          dispatch({
+            type: 'OPEN_TAB',
+            payload: {name}
+          });
+        }}
       />
       <Header
-        title={buildSidebarTitle(tab)}
-        close={() => {setTab("")}}
-        visible={tab === 'broadcast'}
+        title={sidebarTitle}
+        close={() => {
+          const action: OpenTabAction = {
+            type: 'OPEN_TAB',
+            payload: {name: 'home'}
+          }
+          dispatch(action)
+        }}
+        visible={!!sidebarTitle}
         showTips={() => console.log('SHOW TIPS')}
       />
       <Sidebar
+        message={activeMessage}
+        visible={activeTab === 'broadcast' && state.sidebarOpen}
         mobile={mobile}
-        message={template}
-        setMessage={setTemplate}
-        visible={tab === 'broadcast' && sidebarOpen}
-        close={() => {setSidebarOpen(false)}}
+        saveMessage={() => {
+          dispatch({type: 'SAVE_MESSAGE'})
+        }}
+        revertMessage={() => {
+          dispatch({type: 'REVERT_MESSAGE'})
+        }}
+        removeMessage={() => {
+          dispatch({type: 'REMOVE_MESSAGE'})
+        }}
+        updateBody={(message: string) => {
+          dispatch({
+            type: 'UPDATE_BODY',
+            payload: {
+              message,
+            }
+          });
+        }}
+        includeSection={(section: MessageSection , included: boolean) => {
+          dispatch({
+            type: 'INCLUDE_SECTION',
+            payload: {
+              section,
+              included,
+            }
+          });
+        }}
+        // setMessage={setTemplate}
+        toggleSidebar={(open: boolean) => {
+          dispatch({
+            type: 'TOGGLE_SIDEBAR',
+            payload: {open},
+          });
+        }}
       />
-      {(!mobile || !sidebarOpen) &&
+      {(!mobile || !state.sidebarOpen) &&
       <Canvas
-        message={template}
-        showSidebar={() => {setSidebarOpen(true)}}
+        key={String(activeMessage)}
+        message={activeMessage}
+        showSidebar={() => {
+          dispatch({
+            type: 'TOGGLE_SIDEBAR',
+            payload: {open: true},
+          });
+        }}
       />}
     </main>
   )

@@ -1,4 +1,5 @@
 export interface MessageTemplate {
+  name: string,
   header: {
     included: boolean,
     includedTemp: boolean,

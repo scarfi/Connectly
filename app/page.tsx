@@ -967,14 +967,15 @@ const Message = ({
             content={MESSAGE_LAYOUT.body.canvasDisplay}
             backgroundColor={grey[100]}
           />
-          <p
+          <div
             style={{
               color: 'black',
               fontSize: '14px',
+              whiteSpace: 'pre-wrap',
             }}
           >
             {message.body.messageTemp}
-          </p>
+          </div>
           {message.footer.includedTemp && <>
           <Divider
             sx={{
@@ -986,14 +987,15 @@ const Message = ({
             content={MESSAGE_LAYOUT.footer.canvasDisplay}
             backgroundColor={grey[100]}
           />
-          <p
+          <div
             style={{
               color: grey[600],
               fontSize: '14px',
+              whiteSpace: 'pre-wrap',
             }}
           >
             {message.footer.message}
-          </p>
+          </div>
           </>}
           {message.buttons.includedTemp && <>
           <Divider

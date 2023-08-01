@@ -10,6 +10,7 @@ import {
   Card,
   Switch,
   TextareaAutosize,
+  Input,
 } from '@mui/material'
 import {
   grey,
@@ -424,17 +425,23 @@ const defaultMessage: MessageTemplate = {
   buttons: {
     included: true,
     includedTemp: true,
-    buttons: ['Vist Site'],
+    buttons: [
+      'button 0',
+      'button 1',
+      'button 2',
+    ],
   }
 }
 
 type MessageBuilderProps = {
   message: string,
   updateBody: (message: string) => void,
+  updateButton: (index: number, value: string) => void,
 }
 const MessageBuilder = ({
   message,
   updateBody,
+  updateButton,
 }: MessageBuilderProps) => {
 
   const [count, setCount] = useState(message.length);
@@ -507,13 +514,50 @@ type MessageSection = 'header' | 'body' | 'footer' | 'buttons';
 type MessageCardProps = {
   message: MessageTemplate,
   updateBody: (message: string) => void
+  updateButton: (index: number, value: string) => void
   includeSection: (include: boolean) => void
   section: MessageSection,
+}
+
+type ButtonsBuilderProps = {
+  buttons: string[],
+  updateButton: (index: number, value: string) => void,
+}
+const ButtonsBuilder = ({
+  buttons,
+  updateButton,
+}: ButtonsBuilderProps) => {
+
+  return (
+    <Box
+      sx={{
+        display: 'flex',
+        flexDirection: 'column',
+      }}
+    >
+      <Input defaultValue={buttons[0]}
+        onBlur={(e) => {
+          updateButton(0, e.target.value)
+        }}
+      />
+      <Input defaultValue={buttons[1]}
+        onBlur={(e) => {
+          updateButton(1, e.target.value)
+        }}
+      />
+      <Input defaultValue={buttons[2]}
+        onBlur={(e) => {
+          updateButton(2, e.target.value)
+        }}
+      />
+    </Box>
+  )
 }
 
 const MessageCard = ({
   message,
   updateBody,
+  updateButton,
   includeSection,
   section,
 }: MessageCardProps) => {
@@ -530,6 +574,7 @@ const MessageCard = ({
       body = <MessageBuilder 
         message={message.body.messageTemp}
         updateBody={updateBody}
+        updateButton={updateButton}
       />
       break;
     case String('footer'):
@@ -542,6 +587,10 @@ const MessageCard = ({
       title = 'Buttons'
       icon = <Crop169Icon
         sx={{color: grey[600]}}
+      />
+      body = <ButtonsBuilder 
+        buttons={message.buttons.buttons}
+        updateButton={updateButton}
       />
       break;
     case String('header'):
@@ -649,6 +698,7 @@ type SidebarProps = {
   revertMessage: () => void,
   removeMessage: () => void,
   updateBody: (message: string) => void,
+  updateButton: (index: number, value: string) => void,
   includeSection: (section: MessageSection, included: boolean) => void,
   // setMessage: (value: MessageTemplate) => void
   toggleSidebar: (open: boolean) => void
@@ -661,6 +711,7 @@ const Sidebar = ({
   revertMessage,
   removeMessage,
   updateBody,
+  updateButton,
   includeSection,
   toggleSidebar,
 }: SidebarProps) => {
@@ -742,24 +793,28 @@ const Sidebar = ({
           <MessageCard
             message={message}
             updateBody={updateBody}
+            updateButton={updateButton}
             includeSection={(include: boolean) => includeSection('header', include)}
             section="header"
           />
           <MessageCard
             message={message}
             updateBody={updateBody}
+            updateButton={updateButton}
             includeSection={(include: boolean) => includeSection('body', include)}
             section="body"
           />
           <MessageCard
             message={message}
             updateBody={updateBody}
+            updateButton={updateButton}
             includeSection={(include: boolean) => includeSection('footer', include)}
             section="footer"
           />
           <MessageCard
             message={message}
             updateBody={updateBody}
+            updateButton={updateButton}
             includeSection={(include: boolean) => includeSection('buttons', include)}
             section="buttons"
           />
@@ -1127,6 +1182,13 @@ type ToggleSidebarAction = {
     open: boolean,
   }
 }
+type UpdateButtonAction = {
+  type: 'UPDATE_BUTTON',
+  payload: {
+    index: number,
+    value: string,
+  }
+}
 // TODO actions to implement
 // const updateHeaderAction = 'UPDATE_HEADER'
 // const addBodyVariable = 'ADD_BODY_VARIABLE'
@@ -1146,7 +1208,8 @@ type Action =
   IncludeSectionAction |
   ToggleSidebarAction |
   SaveMessageAction |
-  RevertMessageAction;
+  RevertMessageAction |
+  UpdateButtonAction;
 
 type ActionType = {
   type: string,
@@ -1200,11 +1263,28 @@ function appReducer(state = initialState, action: ActionType) {
         messages: newMessages,
       }
     case 'INCLUDE_SECTION':
-      console.log('INCLUDE SECTION!', action.payload)
       newMessages = state.messages.map((m, i) => {
         if (i === state.activeMessage) {
           newMessage = deepCopy(m);
           newMessage[action.payload.section].includedTemp = action.payload.included;
+          return newMessage
+        }
+        return m
+      });
+      return {
+        ...state,
+        messages: newMessages,
+      };
+    case 'UPDATE_BUTTON':
+      newMessages = state.messages.map((m, i) => {
+        if (i === state.activeMessage) {
+          const newMessage: MessageTemplate = deepCopy(m);
+          newMessage.buttons.buttons = newMessage.buttons.buttons.map((buttonText, index) => {
+            if (index === action.payload.index) {
+              return action.payload.value;
+            }
+            return buttonText;
+          });
           return newMessage
         }
         return m
@@ -1265,7 +1345,6 @@ export default function Home() {
   const activeTab: Tabs = state.activeTab;
   const sidebarTitle = useMemo(() => selectSidebarTitle(activeTab), [activeTab]);
   const activeMessage = state.messages[state.activeMessage];
-  console.log('HOME', state)
 
   return (
     <main className={styles.main}>
@@ -1308,6 +1387,15 @@ export default function Home() {
             type: 'UPDATE_BODY',
             payload: {
               message,
+            }
+          });
+        }}
+        updateButton={(index: number, value: string) => {
+          dispatch({
+            type: 'UPDATE_BUTTON',
+            payload: {
+              index,
+              value,
             }
           });
         }}
